@@ -1,5 +1,15 @@
 # UnDoku
 
+---
+
+## About the Puzzle
+
+UnDoku was created to blend the clean, logical purity of classic Sudoku with the directional clue logic found in certain sum‑based puzzles. The aim is to offer a challenge that is **minimalist in presentation** yet **rich in deduction**, where every clue is purposeful and the path to the solution is human‑solvable without guessing. Directional arrow clues provide immediate visual context, encouraging solvers to think spatially as well as numerically.  
+
+Whether you are a casual player or a seasoned logic enthusiast, UnDoku rewards both methodical reasoning and creative leaps.
+
+---
+
 **UnDoku** is a web‑based logic puzzle game inspired by Sudoku — but with a twist.
 
 In UnDoku, you still need to place each digit exactly once per row and column, but directional sum clues add an extra layer of challenge. Tiny arrow‑boxes in the grid point in a direction; the number shown equals the sum of all digits along that ray (excluding the clue cell itself).
@@ -65,7 +75,9 @@ When every cell is correctly filled and all clues are satisfied, a celebratory m
 
 ## Running Locally
 
-1. Clone this repository:
+   Clone this repository:
    ```bash
    git clone https://github.com/yourusername/undoku.git
    cd undoku
+   Open index.html (or rabs_puzzle.html) in your browser.
+   No build steps, no dependencies — just open and play.
