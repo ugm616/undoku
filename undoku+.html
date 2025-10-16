@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UnDoku+ 6×6 — Arrow, Killer, King’s</title>
+<style>
+  :root {
+    --bg: #0f1220;
+    --panel: #151934;
+    --accent: #7aa2f7;
+    --danger: #f7768e;
+    --text: #e5e9f0;
+    --muted: #aab2c0;
+    --grid: #2a315b;
+    --cell: #1b213f;
+    --cell-lock: #0e1636;
+    --arrow: #e0af68;
+    --cage: #73daca;
+    --complete: #2b4d2e;
+  }
+
+  html, body {
+    width: 100%; height: 100%; margin: 0; padding: 0;
+    overflow: hidden;
+    background: radial-gradient(1000px 700px at 20% 15%, #131735, #0d1124 60%, #0b0e1a);
+    color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial;
+    font-size: 13px;
+    display: grid; place-items: center;
+  }
+
+  .wrap {
+    width: 100vw; height: 100vh;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 12px; padding: 12px;
+  }
+
+  header {
+    grid-column: 1 / -1;
+    padding: 8px 12px;
+    border: 1px solid #20264a;
+    border-radius: 8px;
+    background: #11162f;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header .desc { color: var(--muted); font-size: 12px; }
+
+  /* Left panel (controls) */
+  .panel {
+    background: var(--panel);
+    border: 1px solid #20264a;
+    border-radius: 8px;
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+    align-content: start;
+  }
+  .panel h2 { font-size: 14px; margin: 0; color: var(--accent); }
+  .controls { display: grid; gap: 6px; }
+  .controls .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+
+  button, select {
+    background: #1a2040; color: var(--text);
+    border: 1px solid #2a315b; border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #1b254e; border-color: #5a86ff; }
+  button.danger { background: #2a1220; border-color: var(--danger); }
+
+  /* Right content (grid) */
+  .content {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+  }
+  .grid-wrap { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
+
+  /* Grid ~15% smaller cap (80vh) */
+  .grid {
+    --n: 6;
+    width: min(100%, 80vh);
+    height: min(100%, 80vh);
+    aspect-ratio: 1 / 1;
+    background: var(--grid);
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: repeat(var(--n), 1fr);
+    grid-template-rows: repeat(var(--n), 1fr);
+    position: relative;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .cell {
+    border: 1px solid rgba(255,255,255,0.08);
+    background: var(--cell);
+    position: relative;
+    user-select: none;
+    z-index: 2;
+  }
+  .digit {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(12px, 4.2vmin, 28px);
+  }
+
+  /* Larger pencil marks */
+  .notes {
+    position: absolute; inset: 3px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    font-size: 0.85em;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .notes div {
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+    opacity: 0.95;
+  }
+
+  .cell.lock { background: var(--cell-lock); color: #cfe3ff; }
+  .cell.sel { outline: 2px solid var(--accent); }
+  .cell.conflict { background: #2a1830; box-shadow: inset 0 0 0 2px var(--danger); }
+
+  /* Keypad layout:
+     1 2 3
+     4 5 6
+     Erase Note Mode
+  */
+  .digits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .digits button { padding: 8px 0; font-size: 12px; }
+  .digits .row-sep { grid-column: 1 / -1; }
+
+  .legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+
+  .msg { font-size: 12px; color: var(--muted); min-height: 16px; }
+
+  .footer {
+    grid-column: 1 / -1;
+    padding: 6px 10px; color: var(--muted); font-size: 11px;
+  }
+
+  .complete-banner {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: 12px; background: var(--complete);
+    border: 1px solid #3a6a3e; color: #d9f5db;
+    padding: 6px 10px; border-radius: 6px; font-size: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    display: none;
+  }
+
+  /* Overlay above grid background, below digits */
+  svg.overlay {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>UnDoku+ 6×6</h1>
+      <div class="desc">Latin-square base with Arrow, Killer, and King’s constraints. Strict givens: 0–8. Killer cages use unique digits.</div>
+    </header>
+
+    <!-- Left panel (controls) -->
+    <div class="panel">
+      <h2>New game</h2>
+      <div class="controls">
+        <div class="row">
+          <label><input type="checkbox" id="optArrow" checked /> Arrow rules</label>
+          <label><input type="checkbox" id="optKiller" checked /> Killer cages</label>
+          <label><input type="checkbox" id="optKing" checked /> King’s rule</label>
+        </div>
+        <div class="row">
+          <label>Constraint density
+            <select id="constraintDensity">
+              <option value="0.40" selected>Balanced</option>
+              <option value="0.20">Light</option>
+              <option value="0.60">Heavy</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <button id="newGame" class="primary">Generate</button>
+          <button id="check">Check</button>
+          <button id="hint">Hint</button>
+          <button id="reveal" class="danger">Reveal</button>
+        </div>
+        <div class="msg" id="msg"></div>
+        <div class="legend">
+          <span><span class="dot" style="background: var(--arrow)"></span>Arrow path</span>
+          <span><span class="dot" style="background: var(--cage)"></span>Killer cage</span>
+          <span><span class="dot" style="background: var(--danger)"></span>Conflict</span>
+        </div>
+        <h2>Input</h2>
+        <div class="digits" id="digits"></div>
+      </div>
+    </div>
+
+    <!-- Right content (grid) -->
+    <div class="content">
+      <div class="grid-wrap">
+        <svg id="overlay" class="overlay" viewBox="0 0 6 6" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3"
+                    orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#e0af68" fill-opacity="0.7"/>
+            </marker>
+          </defs>
+        </svg>
+        <div id="grid" class="grid" style="--n:6" tabindex="0" aria-label="UnDoku grid"></div>
+      </div>
+    </div>
+
+    <div class="footer">Rules: Row/column uniqueness; Arrow path sums to circle value (no sum text shown); Killer cages use unique digits and match sum; King’s rule: identical digits cannot be adjacent diagonally.</div>
+  </div>
+
+  <div id="completeBanner" class="complete-banner">Puzzle complete — well played.</div>
+
+<script>
+(function(){
+  const N = 6;
+  const DIGITS = Array.from({length:N}, (_,i)=>i+1);
+
+  const MIN_GIVENS = 0;
+  const MAX_GIVENS = 8;
+
+  let solution = null;
+  let puzzle = null;
+  let fixed = null;
+  let candidates = null;
+  let sel = {r:0,c:0};
+  let constraints = {arrows:[], cages:[], king:true};
+  let noteMode = false;
+
+  const msgEl = document.getElementById('msg');
+  const bannerEl = document.getElementById('completeBanner');
+  const gridEl = document.getElementById('grid');
+  const digitsEl = document.getElementById('digits');
+  const svgEl = document.getElementById('overlay');
+  const cells = [];
+
+  function showMsg(s){ msgEl.textContent = s || ''; }
+  function showBanner(s){
+    bannerEl.textContent = s;
+    bannerEl.style.display = 'block';
+    setTimeout(()=> bannerEl.style.display='none', 2500);
+  }
+
+  // Build grid cells
+  for (let r=0;r<N;r++){
+    const row = [];
+    for (let c=0;c<N;c++){
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.r = r; cell.dataset.c = c;
+
+      const digit = document.createElement('div');
+      digit.className = 'digit';
+
+      const notes = document.createElement('div');
+      notes.className = 'notes';
+      for (let k=0;k<N;k++){
+        const nd = document.createElement('div');
+        nd.textContent = DIGITS[k];
+        nd.style.visibility = 'hidden';
+        notes.appendChild(nd);
+      }
+
+      cell.appendChild(digit);
+      cell.appendChild(notes);
+      cell.addEventListener('click', () => selectCell(r,c));
+      gridEl.appendChild(cell);
+      row.push(cell);
+    }
+    cells.push(row);
+  }
+  selectCell(0,0);
+
+  function selectCell(r,c){
+    sel = {r,c};
+    for (let rr=0; rr<N; rr++) for (let cc=0; cc<N; cc++){
+      cells[rr][cc].classList.toggle('sel', rr===r && cc===c);
+    }
+    gridEl.focus();
+  }
+
+  // Keypad: (1..3), (4..6), then Erase + Note Mode on own row
+  function buildDigits(){
+    digitsEl.innerHTML = '';
+    [1,2,3,4,5,6].forEach(v => {
+      const b = document.createElement('button');
+      b.textContent = v;
+      b.addEventListener('click', ()=> placeDigit(sel.r, sel.c, v));
+      digitsEl.appendChild(b);
+    });
+
+    // force next row
+    const sep = document.createElement('div');
+    sep.className = 'row-sep';
+    sep.style.display = 'contents';
+    digitsEl.appendChild(sep);
+
+    const eraseBtn = document.createElement('button');
+    eraseBtn.textContent = 'Erase';
+    eraseBtn.addEventListener('click', ()=> placeDigit(sel.r, sel.c, 0));
+
+    const noteBtn = document.createElement('button');
+    noteBtn.textContent = 'Note mode';
+    noteBtn.addEventListener('click', ()=> {
+      noteMode = !noteMode;
+      noteBtn.classList.toggle('primary', noteMode);
+      showMsg(noteMode ? 'Note mode ON' : 'Note mode OFF');
+    });
+
+    digitsEl.appendChild(eraseBtn);
+    digitsEl.appendChild(noteBtn);
+  }
+  buildDigits();
+
+  function placeDigit(r,c,val){
+    if (!puzzle) return;
+    if (noteMode){
+      if (fixed[r][c]) return;
+      if (val === 0){
+        candidates[r][c].clear();
+      } else {
+        if (candidates[r][c].has(val)) candidates[r][c].delete(val);
+        else candidates[r][c].add(val);
+      }
+    } else {
+      if (fixed[r][c]) return;
+      puzzle[r][c] = val;
+      candidates[r][c].clear();
+    }
+    render();
+    if (!noteMode && isSolved()){
+      showMsg('Completed — all constraints satisfied.');
+      showBanner('Puzzle complete — well played.');
+    }
+  }
+
+  // Latin square generator (base + row/col permutations)
+  function makeLatin(n){
+    const base = Array.from({length:n}, (_,r)=>
+      Array.from({length:n}, (_,c)=> ((r+c)%n)+1)
+    );
+    function shuffle(arr){
+      for (let i=arr.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]]=[arr[j],arr[i]];
+      }
+      return arr;
+    }
+    const rp = shuffle(Array.from({length:n},(_,i)=>i));
+    const cp = shuffle(Array.from({length:n},(_,i)=>i));
+    return Array.from({length:n}, (_,ri)=>
+      Array.from({length:n}, (_,ci)=> base[rp[ri]][cp[ci]])
+    );
+  }
+
+  function randomArrows(density){
+    const arrows = [];
+    const target = Math.max(1, Math.floor(N * density));
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    function shuffle(arr){
+      for (let i=arr.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]]=[arr[j],arr[i]];
+      }
+      return arr;
+    }
+    const circles = shuffle(Array.from({length:N*N}, (_,k)=> [Math.floor(k/N), k%N]));
+    for (const [r,c] of circles){
+      if (arrows.length >= target) break;
+      const circleVal = solution[r][c];
+      let placed=false;
+      for (const [dr,dc] of shuffle(dirs)){
+        for (let len=3; len>=2; len--){
+          const path = [];
+          let rr = r + dr, cc = c + dc;
+          for (let k=0;k<len;k++){
+            if (rr<0 || rr>=N || cc<0 || cc>=N){ path.length=0; break; }
+            path.push([rr,cc]);
+            rr += dr; cc += dc;
+          }
+          if (path.length < 2) continue;
+          const sum = path.reduce((s,[pr,pc]) => s + solution[pr][pc], 0);
+          if (sum === circleVal){
+            arrows.push({circle:[r,c], path, sum});
+            placed=true;
+            break;
+          }
+        }
+        if (placed || arrows.length >= target) break;
+      }
+    }
+    return arrows;
+  }
+
+  // Killer cages with unique digits
+  function randomCages(density){
+    const cages = [];
+    const seen = new Set();
+    const targetCount = Math.max(2, Math.floor(N*density*1.5));
+    function key(rc){ return rc[0]+','+rc[1]; }
+    function free(rc){ return !seen.has(key(rc)); }
+    function shuffle(arr){
+      for (let i=arr.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]]=[arr[j],arr[i]];
+      }
+      return arr;
+    }
+    let guard = 3000;
+    while (cages.length < targetCount && guard--){
+      let r = Math.floor(Math.random()*N), c = Math.floor(Math.random()*N);
+      if (!free([r,c])) continue;
+
+      const size = 2 + Math.floor(Math.random()*2); // 2–3 cells
+      const cellsCage = [[r,c]];
+      seen.add(key([r,c]));
+
+      for (let k=1;k<size;k++){
+        const frontier = shuffle([[r+1,c],[r-1,c],[r,c+1],[r,c-1]]).filter(([rr,cc])=>
+          rr>=0&&rr<N&&cc>=0&&cc<N&&free([rr,cc])
+        );
+        if (!frontier.length) break;
+        const [nr,nc] = frontier[0];
+        cellsCage.push([nr,nc]);
+        seen.add(key([nr,nc]));
+        r=nr; c=nc;
+      }
+
+      const values = cellsCage.map(([rr,cc]) => solution[rr][cc]);
+      const uniq = new Set(values);
+      if (uniq.size !== cellsCage.length){
+        for (const [rr,cc] of cellsCage) seen.delete(key([rr,cc]));
+        continue;
+      }
+
+      const sum = values.reduce((s,v)=> s+v, 0);
+      cages.push({cells: cellsCage, sum});
+    }
+    return cages;
+  }
+
+  function kingAdjPositions(r,c){
+    const out=[];
+    for (let dr=-1; dr<=1; dr++){
+      for (let dc=-1; dc<=1; dc++){
+        if (dr===0 && dc===0) continue;
+        const rr=r+dr, cc=c+dc;
+        if (rr>=0&&rr<N&&cc>=0&&cc<N) out.push([rr,cc]);
+      }
+    }
+    return out;
+  }
+
+  function isValidCell(state, r, c, v){
+    if (v===0) return true;
+    for (let i=0;i<N;i++){
+      if (i!==c && state[r][i]===v) return false;
+      if (i!==r && state[i][c]===v) return false;
+    }
+    if (constraints.king){
+      for (const [rr,cc] of kingAdjPositions(r,c)){
+        if (state[rr][cc]===v) return false;
+      }
+    }
+    for (const cage of constraints.cages){
+      const cellsC = cage.cells;
+      const inCage = cellsC.some(([rr,cc])=> rr===r && cc===c);
+      if (inCage){
+        for (const [rr,cc] of cellsC){
+          if (!(rr===r && cc===c) && state[rr][cc]===v) return false;
+        }
+      }
+      let filled=0, sum=0;
+      for (const [rr,cc] of cellsC){
+        const val = (rr===r && cc===c) ? v : state[rr][cc];
+        if (val>0){ filled++; sum+=val; }
+      }
+      if (filled===cellsC.length && sum!==cage.sum) return false;
+      if (sum>cage.sum) return false;
+      let minAdd=0, maxAdd=0;
+      for (const [rr,cc] of cellsC){
+        const val = (rr===r && cc===c) ? v : state[rr][cc];
+        if (val===0){
+          const used = new Set(cellsC.map(([xr,xc])=> (xr===r && xc===c)? v : state[xr][xc]).filter(k=>k>0));
+          const avail = DIGITS.filter(d=> !used.has(d));
+          if (avail.length===0) return false;
+          minAdd += Math.min(...avail);
+          maxAdd += Math.max(...avail);
+        }
+      }
+      if (sum + minAdd > cage.sum) return false;
+      if (sum + maxAdd < cage.sum) return false;
+    }
+    for (const ar of constraints.arrows){
+      const [cr,cc] = ar.circle;
+      const isCircle = (r===cr && c===cc);
+      const inPath = ar.path.some(([rr,pc])=> rr===r && pc===c);
+      if (isCircle || inPath){
+        let pathSum=0, pathFilled=0;
+        for (const [rr,pc] of ar.path){
+          const val = (rr===r && pc===c) ? v : state[rr][pc];
+          if (val>0){ pathFilled++; pathSum+=val; }
+        }
+        const circleVal = isCircle ? v : state[cr][cc];
+        if (pathFilled===ar.path.length && circleVal>0){
+          if (pathSum !== circleVal) return false;
+        }
+        if (circleVal>0 && pathSum > circleVal) return false;
+      }
+    }
+    return true;
+  }
+
+  function findEmpty(state){
+    for (let r=0;r<N;r++) for (let c=0;c<N;c++) if (state[r][c]===0) return [r,c];
+    return null;
+  }
+
+  function solveCount(state, limit=2){
+    let count=0;
+    function dfs(){
+      const e = findEmpty(state);
+      if (!e){ count++; return count<limit; }
+      const [r,c]=e;
+      const opts = DIGITS.filter(v=> isValidCell(state, r, c, v));
+      for (const v of opts){
+        state[r][c]=v;
+        if (!dfs()) return false;
+        state[r][c]=0;
+      }
+      return true;
+    }
+    dfs();
+    return count;
+  }
+
+  function logicalSolve(initial){
+    const steps=[];
+    const state = initial.map(row=> row.slice());
+    function candidateSet(r,c){
+      if (state[r][c]>0) return new Set([state[r][c]]);
+      const s = new Set(DIGITS);
+      for (let i=0;i<N;i++){ s.delete(state[r][i]); s.delete(state[i][c]); }
+      if (constraints.king){
+        for (const [rr,cc] of kingAdjPositions(r,c)){ s.delete(state[rr][cc]); }
+      }
+      for (const cage of constraints.cages){
+        if (cage.cells.some(([rr,cc])=> rr===r && cc===c)){
+          const used = new Set(cage.cells.map(([rr,cc])=> state[rr][cc]).filter(v=>v>0));
+          for (const u of used) s.delete(u);
+          const others = cage.cells.filter(([rr,cc])=> !(rr===r && cc===c));
+          const fixedSum = others.reduce((t,[rr,cc])=> t + (state[rr][cc]||0), 0);
+          const empties = others.filter(([rr,cc])=> state[rr][cc]===0).length;
+          const valid = new Set();
+          for (const v of s){
+            const remain = cage.sum - (fixedSum + v);
+            if (remain < 0) continue;
+            if (empties===0 && remain===0){ valid.add(v); continue; }
+            if (empties>0){
+              const used2 = new Set(others.map(([rr,cc])=> state[rr][cc]).filter(x=>x>0)); used2.add(v);
+              const avail = DIGITS.filter(x=> !used2.has(x));
+              if (avail.length < empties) continue;
+              const sorted = avail.slice().sort((a,b)=>a-b);
+              const minSum = sorted.slice(0,empties).reduce((a,b)=>a+b,0);
+              const maxSum = sorted.slice(-empties).reduce((a,b)=>a+b,0);
+              if (remain >= minSum && remain <= maxSum) valid.add(v);
+            }
+          }
+          for (const v of Array.from(s)) if (!valid.has(v)) s.delete(v);
+        }
+      }
+      for (const ar of constraints.arrows){
+        const [cr,cc] = ar.circle;
+        const isCircle = (r===cr && c===cc);
+        const inPath = ar.path.some(([rr,pc])=> rr===r && pc===c);
+        const pathVals = ar.path.map(([rr,pc])=> state[rr][pc]);
+        const circleVal = state[cr][cc];
+        if (isCircle){
+          const minSum = pathVals.reduce((s,v)=> s + (v>0?v:1), 0);
+          const maxSum = pathVals.reduce((s,v)=> s + (v>0?v:N), 0);
+          for (const v of Array.from(s)) if (!(v>=minSum && v<=maxSum)) s.delete(v);
+        } else if (inPath && circleVal>0){
+          const otherSum = ar.path.reduce((s,[rr,pc])=> s + ((rr===r && pc===c)?0 : (state[rr][pc]||0)), 0);
+          const needed = circleVal - otherSum;
+          const allowed = new Set();
+          if (needed>=1 && needed<=N){ allowed.add(needed); }
+          for (const v of Array.from(s)) if (!allowed.has(v)) s.delete(v);
+        }
+      }
+      return s;
+    }
+
+    function fillSingles(){
+      let progress=false;
+      for (let r=0;r<N;r++){
+        for (let c=0;c<N;c++){
+          if (state[r][c]===0){
+            const cand = candidateSet(r,c);
+            if (cand.size===1){
+              const val = Array.from(cand)[0];
+              state[r][c]=val;
+              steps.push({type:'single', pos:[r,c], val});
+              progress=true;
+            }
+          }
+        }
+      }
+      return progress;
+    }
+
+    function hiddenSinglesLines(){
+      let progress=false;
+      for (let r=0;r<N;r++){
+        for (const d of DIGITS){
+          let places=[];
+          for (let c=0;c<N;c++){
+            if (state[r][c]===0 && candidateSet(r,c).has(d)) places.push([r,c]);
+          }
+          if (places.length===1){
+            const [rr,cc]=places[0];
+            state[rr][cc]=d; steps.push({type:'hidden-single-row', pos:[rr,cc], val:d}); progress=true;
+          }
+        }
+      }
+      for (let c=0;c<N;c++){
+        for (const d of DIGITS){
+          let places=[];
+          for (let r=0;r<N;r++){
+            if (state[r][c]===0 && candidateSet(r,c).has(d)) places.push([r,c]);
+          }
+          if (places.length===1){
+            const [rr,cc]=places[0];
+            state[rr][cc]=d; steps.push({type:'hidden-single-col', pos:[rr,cc], val:d}); progress=true;
+          }
+        }
+      }
+      return progress;
+    }
+
+    let guard=600;
+    while (guard--){
+      const p1 = fillSingles();
+      const p2 = hiddenSinglesLines();
+      if (!p1 && !p2) break;
+    }
+    const complete = state.every(row=> row.every(v=> v>0));
+    return complete ? steps : null;
+  }
+
+  function syncOverlaySize(){
+    const rect = gridEl.getBoundingClientRect();
+    svgEl.style.width = rect.width + 'px';
+    svgEl.style.height = rect.height + 'px';
+    svgEl.setAttribute('viewBox', `0 0 ${N} ${N}`);
+    svgEl.setAttribute('preserveAspectRatio', 'none');
+  }
+
+  function clearSVG(){
+    while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+  }
+  function svgElmt(name, attrs){
+    const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  // Arrow: circle + path with arrowhead; no sum text drawn
+  function drawArrow(circle, pathCells){
+    const [cr,cc] = circle;
+    const cx = cc + 0.5, cy = cr + 0.5;
+    const circ = svgElmt("circle", {
+      cx, cy, r: 0.25,
+      stroke: "#e0af68", "stroke-width": "0.05",
+      fill: "none", "stroke-opacity": "0.7"
+    });
+    svgEl.appendChild(circ);
+    let d = `M ${cx} ${cy}`;
+    for (const [rr,pc] of pathCells){
+      d += ` L ${pc+0.5} ${rr+0.5}`;
+    }
+    const p = svgElmt("path", {
+      d, stroke: "#e0af68", "stroke-width": "0.05",
+      fill: "none", "stroke-opacity": "0.7",
+      "marker-end": "url(#arrowhead)"
+    });
+    svgEl.appendChild(p);
+  }
+
+  function drawCage(cage){
+    const cellsSet = new Set(cage.cells.map(([r,c])=> `${r},${c}`));
+    function inSet(r,c){ return cellsSet.has(`${r},${c}`); }
+    for (const [r,c] of cage.cells){
+      const x = c, y = r;
+      if (!inSet(r-1,c)){
+        svgEl.appendChild(svgElmt("line", { x1:x, y1:y, x2:x+1, y2:y, stroke:"#73daca", "stroke-width":"0.06", "stroke-dasharray":"0.18,0.18", "stroke-opacity":"0.7" }));
+      }
+      if (!inSet(r+1,c)){
+        svgEl.appendChild(svgElmt("line", { x1:x, y1:y+1, x2:x+1, y2:y+1, stroke:"#73daca", "stroke-width":"0.06", "stroke-dasharray":"0.18,0.18", "stroke-opacity":"0.7" }));
+      }
+      if (!inSet(r,c-1)){
+        svgEl.appendChild(svgElmt("line", { x1:x, y1:y, x2:x, y2:y+1, stroke:"#73daca", "stroke-width":"0.06", "stroke-dasharray":"0.18,0.18", "stroke-opacity":"0.7" }));
+      }
+      if (!inSet(r,c+1)){
+        svgEl.appendChild(svgElmt("line", { x1:x+1, y1:y, x2:x+1, y2:y+1, stroke:"#73daca", "stroke-width":"0.06", "stroke-dasharray":"0.18,0.18", "stroke-opacity":"0.7" }));
+      }
+    }
+    let r0 = Infinity, c0 = Infinity;
+    for (const [r,c] of cage.cells){
+      if (r < r0 || (r===r0 && c < c0)){ r0 = r; c0 = c; }
+    }
+    const txt = svgElmt("text", { x: c0+0.12, y: r0+0.3, "font-size":"0.25", fill:"#73daca", "fill-opacity":"0.8" });
+    txt.textContent = cage.sum;
+    svgEl.appendChild(txt);
+  }
+
+  function render(){
+    syncOverlaySize();
+    for (let r=0;r<N;r++){
+      for (let c=0;c<N;c++){
+        const cell = cells[r][c];
+        const digitEl = cell.querySelector('.digit');
+        const notesEl = cell.querySelector('.notes');
+        const v = puzzle[r][c]||0;
+        digitEl.textContent = v>0 ? v : '';
+        cell.classList.toggle('lock', fixed[r][c]);
+        cell.classList.remove('conflict');
+        const noteSlots = Array.from(notesEl.children);
+        for (let k=0;k<N;k++){
+          const d = DIGITS[k];
+          noteSlots[k].style.visibility = (candidates[r][c].has(d) && v===0) ? 'visible' : 'hidden';
+        }
+      }
+    }
+    clearSVG();
+    for (const ar of constraints.arrows){ drawArrow(ar.circle, ar.path); }
+    for (const cg of constraints.cages){ drawCage(cg); }
+  }
+
+  function check(){
+    let ok=true;
+    for (let r=0;r<N;r++){
+      for (let c=0;c<N;c++){
+        const v = puzzle[r][c];
+        if (v===0) continue;
+        if (!isValidCell(puzzle, r, c, v)){
+          ok=false; cells[r][c].classList.add('conflict');
+        }
+      }
+    }
+    showMsg(ok ? 'No conflicts found.' : 'Conflicts marked in red.');
+    if (ok && isSolved()){
+      showBanner('Puzzle complete — well played.');
+    }
+  }
+
+  function isSolved(){
+    if (!puzzle) return false;
+    for (let r=0;r<N;r++){
+      for (let c=0;c<N;c++){
+        const v = puzzle[r][c];
+        if (v===0 || !isValidCell(puzzle, r, c, v)) return false;
+      }
+    }
+    return true;
+  }
+
+  function hint(){
+    const steps = logicalSolve(puzzle.map(row=> row.slice()));
+    if (!steps || steps.length===0){ showMsg('No immediate logical deduction found. Try regenerate or Reveal.'); return; }
+    const s = steps[0];
+    puzzle[s.pos[0]][s.pos[1]] = s.val;
+    fixed[s.pos[0]][s.pos[1]] = false;
+    candidates[s.pos[0]][s.pos[1]].clear();
+    render();
+    showMsg(`Hint placed at (${s.pos[0]+1},${s.pos[1]+1}) = ${s.val}.`);
+    if (isSolved()){
+      showBanner('Puzzle complete — well played.');
+    }
+  }
+
+  function reveal(){
+    puzzle = solution.map(row=> row.slice());
+    fixed = puzzle.map(row=> row.map(()=>true));
+    candidates = Array.from({length:N}, ()=> Array.from({length:N}, ()=> new Set()));
+    render();
+    showMsg('Solution revealed.');
+    showBanner('Puzzle complete — well played.');
+  }
+
+  function countFilled(state){
+    let n=0; for (let r=0;r<N;r++) for (let c=0;c<N;c++) if (state[r][c]>0) n++;
+    return n;
+  }
+
+  function buildClueCellSet(){
+    const s = new Set();
+    for (const ar of constraints.arrows){
+      s.add(ar.circle.join(','));
+      for (const [rr,cc] of ar.path) s.add(rr+','+cc);
+    }
+    for (const cg of constraints.cages){
+      for (const [rr,cc] of cg.cells) s.add(rr+','+cc);
+    }
+    return s;
+  }
+
+  function minimalize(state){
+    const coords=[];
+    for (let r=0;r<N;r++) for (let c=0;c<N;c++) if (state[r][c]>0) coords.push([r,c]);
+    for (let i=coords.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1)); [coords[i],coords[j]]=[coords[j],coords[i]];
+    }
+    for (const [r,c] of coords){
+      const keep = state[r][c];
+      state[r][c]=0;
+      const copy = state.map(row=> row.slice());
+      if (solveCount(copy, 2) !== 1){
+        state[r][c]=keep;
+      }
+    }
+  }
+
+  function generate(){
+    showMsg('Generating...');
+    solution = makeLatin(N);
+
+    const useArrow = document.getElementById('optArrow').checked;
+    const useKiller = document.getElementById('optKiller').checked;
+    const useKing = document.getElementById('optKing').checked;
+    const cDensity = parseFloat(document.getElementById('constraintDensity').value);
+    constraints = {arrows:[], cages:[], king:useKing};
+
+    if (useArrow) constraints.arrows = randomArrows(cDensity);
+    if (useKiller) constraints.cages = randomCages(cDensity);
+
+    let state = solution.map(row=> row.slice());
+    const clueCells = buildClueCellSet();
+
+    function shuffle(arr){
+      for (let i=arr.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]]=[arr[j],arr[i]];
+      }
+      return arr;
+    }
+
+    const orderClue = [], orderNonClue = [];
+    for (let r=0;r<N;r++){
+      for (let c=0;c<N;c++){
+        const key = r+','+c;
+        if (clueCells.has(key)) orderClue.push([r,c]);
+        else orderNonClue.push([r,c]);
+      }
+    }
+    shuffle(orderClue);
+    shuffle(orderNonClue);
+    const order = orderClue.concat(orderNonClue);
+
+    for (const [r,c] of order){
+      const keep = state[r][c];
+      state[r][c] = 0;
+      const copy = state.map(row=> row.slice());
+      if (solveCount(copy, 2) !== 1){
+        state[r][c] = keep;
+      }
+      if (countFilled(state) <= MAX_GIVENS) break;
+    }
+
+    minimalize(state);
+
+    function listGivens(st){
+      const arr=[]; for (let r=0;r<N;r++) for (let c=0;c<N;c++) if (st[r][c]>0) arr.push([r,c]);
+      return arr;
+    }
+    let givens = listGivens(state);
+    if (givens.length > MAX_GIVENS){
+      const nonClueG = givens.filter(([r,c])=> !clueCells.has(r+','+c));
+      const clueG = givens.filter(([r,c])=> clueCells.has(r+','+c));
+      shuffle(nonClueG); shuffle(clueG);
+      const tryRemoveList = nonClueG.concat(clueG);
+      for (const [r,c] of tryRemoveList){
+        if (countFilled(state) <= MAX_GIVENS) break;
+        const keep = state[r][c];
+        state[r][c]=0;
+        const copy = state.map(row=> row.slice());
+        if (solveCount(copy, 2) !== 1){
+          state[r][c]=keep;
+        }
+      }
+    }
+
+    givens = listGivens(state);
+    shuffle(givens);
+    for (const [r,c] of givens){
+      const keep = state[r][c];
+      state[r][c] = 0;
+      const copy = state.map(row=> row.slice());
+      if (solveCount(copy, 2) !== 1){
+        state[r][c] = keep;
+      }
+    }
+
+    const finalUnique = solveCount(state.map(row=> row.slice()), 2) === 1;
+    const finalGivens = countFilled(state);
+    if (!finalUnique || finalGivens > MAX_GIVENS){
+      return generate();
+    }
+
+    puzzle = state;
+    fixed = puzzle.map(row=> row.map(v=> v>0));
+    candidates = Array.from({length:N}, ()=> Array.from({length:N}, ()=> new Set()));
+
+    selectCell(0,0);
+    render();
+
+    const steps = logicalSolve(puzzle.map(row=> row.slice()));
+    const clueGivenCount = (()=> {
+      let n=0; for (let r=0;r<N;r++) for (let c=0;c<N;c++) if (fixed[r][c] && clueCells.has(r+','+c)) n++;
+      return n;
+    })();
+    const msg = `Puzzle ready. Givens: ${finalGivens} (cap ${MAX_GIVENS}), unique: yes, logical path: ${steps ? steps.length : 'unknown'}, Arrows: ${constraints.arrows.length}, Cages: ${constraints.cages.length}, King: ${constraints.king ? 'on' : 'off'}, Givens in clues: ${clueGivenCount}.`;
+    showMsg(msg);
+  }
+
+  gridEl.addEventListener('keydown', (ev)=>{
+    const k = ev.key;
+    let consumed=false;
+    if (k === 'ArrowUp'){ sel.r = (sel.r + N - 1)%N; consumed=true; }
+    else if (k === 'ArrowDown'){ sel.r = (sel.r + 1)%N; consumed=true; }
+    else if (k === 'ArrowLeft'){ sel.c = (sel.c + N - 1)%N; consumed=true; }
+    else if (k === 'ArrowRight'){ sel.c = (sel.c + 1)%N; consumed=true; }
+    else if (/^[1-6]$/.test(k)){
+      placeDigit(sel.r, sel.c, parseInt(k,10)); consumed=true;
+    }
+    else if (k === 'Backspace' || k === 'Delete'){ placeDigit(sel.r, sel.c, 0); consumed=true; }
+    else if (k.toLowerCase() === 'h'){ hint(); consumed=true; }
+    else if (k.toLowerCase() === 'r'){ reveal(); consumed=true; }
+    else if (k.toLowerCase() === 'n'){ generate(); consumed=true; }
+    else if (k.toLowerCase() === 'm'){ noteMode = !noteMode; consumed=true; showMsg(noteMode ? 'Note mode ON' : 'Note mode OFF'); }
+    else if (k === 'Enter'){ check(); consumed=true; }
+    if (consumed){
+      ev.preventDefault();
+      selectCell(sel.r, sel.c);
+    }
+  });
+
+  document.getElementById('newGame').addEventListener('click', generate);
+  document.getElementById('check').addEventListener('click', check);
+  document.getElementById('hint').addEventListener('click', hint);
+  document.getElementById('reveal').addEventListener('click', reveal);
+
+  window.addEventListener('resize', ()=> {
+    syncOverlaySize();
+    render();
+  });
+
+  generate();
+
+  // Build keypad after generation so state exists
+})();
+</script>
+</body>
+</html>
