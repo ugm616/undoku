@@ -183,8 +183,8 @@
       <h2>New game</h2>
       <div class="controls">
         <div class="row">
-          <label><input type="checkbox" id="optArrow" checked /> Arrow rules</label>
-          <label><input type="checkbox" id="optKiller" checked /> Killer cages</label>
+          <label><input type="checkbox" id="optArrow" /> Arrow rules</label>
+          <label><input type="checkbox" id="optKiller" /> Killer cages</label>
           <label><input type="checkbox" id="optKing" checked /> King’s rule</label>
         </div>
         <div class="row">
@@ -356,11 +356,14 @@
     }
   }
 
-  // Latin square generator (base + row/col permutations)
-  function makeLatin(n){
-    const base = Array.from({length:n}, (_,r)=>
-      Array.from({length:n}, (_,c)=> ((r+c)%n)+1)
-    );
+  // Constraint-aware solution generator (enforces King’s rule if enabled)
+  function makeSolutionWithConstraints(){
+    const state = Array.from({length:N}, ()=> Array(N).fill(0));
+    const order = [];
+    for (let r=0;r<N;r++) for (let c=0;c<N;c++) order.push([r,c]);
+    // Heuristic: fill by increasing r+c to reduce branching
+    order.sort((a,b)=> (a[0]+a[1]) - (b[0]+b[1]));
+
     function shuffle(arr){
       for (let i=arr.length-1;i>0;i--){
         const j = Math.floor(Math.random()*(i+1));
@@ -368,13 +371,25 @@
       }
       return arr;
     }
-    const rp = shuffle(Array.from({length:n},(_,i)=>i));
-    const cp = shuffle(Array.from({length:n},(_,i)=>i));
-    return Array.from({length:n}, (_,ri)=>
-      Array.from({length:n}, (_,ci)=> base[rp[ri]][cp[ci]])
-    );
+
+    function dfs(idx){
+      if (idx === order.length) return true;
+      const [r,c] = order[idx];
+      const digits = shuffle(DIGITS.slice());
+      for (const v of digits){
+        if (isValidCell(state, r, c, v)){  // respects constraints.king
+          state[r][c] = v;
+          if (dfs(idx+1)) return true;
+          state[r][c] = 0;
+        }
+      }
+      return false;
+    }
+    if (!dfs(0)) throw new Error('Failed to construct constraint-respecting solution.');
+    return state;
   }
 
+  // Arrow generation (for when enabled; solution already respects constraints)
   function randomArrows(density){
     const arrows = [];
     const target = Math.max(1, Math.floor(N * density));
@@ -414,7 +429,7 @@
     return arrows;
   }
 
-  // Killer cages with unique digits
+  // Killer cages with unique digits enforcement
   function randomCages(density){
     const cages = [];
     const seen = new Set();
@@ -826,6 +841,26 @@
     return s;
   }
 
+  // Ensure givens do not violate King's rule
+  function givensRespectKing(puz){
+    if (!constraints.king) return true;
+    for (let r=0;r<N;r++){
+      for (let c=0;c<N;c++){
+        const v = puz[r][c];
+        if (v===0) continue;
+        for (let dr=-1; dr<=1; dr++){
+          for (let dc=-1; dc<=1; dc++){
+            if (dr===0 && dc===0) continue;
+            const rr=r+dr, cc=c+dc;
+            if (rr<0||rr>=N||cc<0||cc>=N) continue;
+            if (puz[rr][cc]===v) return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
   function minimalize(state){
     const coords=[];
     for (let r=0;r<N;r++) for (let c=0;c<N;c++) if (state[r][c]>0) coords.push([r,c]);
@@ -844,13 +879,15 @@
 
   function generate(){
     showMsg('Generating...');
-    solution = makeLatin(N);
 
     const useArrow = document.getElementById('optArrow').checked;
     const useKiller = document.getElementById('optKiller').checked;
     const useKing = document.getElementById('optKing').checked;
     const cDensity = parseFloat(document.getElementById('constraintDensity').value);
     constraints = {arrows:[], cages:[], king:useKing};
+
+    // Build a solution that respects King’s rule if enabled
+    solution = makeSolutionWithConstraints();
 
     if (useArrow) constraints.arrows = randomArrows(cDensity);
     if (useKiller) constraints.cages = randomCages(cDensity);
@@ -866,6 +903,7 @@
       return arr;
     }
 
+    // Prefer removing givens from clue cells first (keeps clues clean)
     const orderClue = [], orderNonClue = [];
     for (let r=0;r<N;r++){
       for (let c=0;c<N;c++){
@@ -878,6 +916,7 @@
     shuffle(orderNonClue);
     const order = orderClue.concat(orderNonClue);
 
+    // Remove while uniqueness holds; aim under MAX_GIVENS
     for (const [r,c] of order){
       const keep = state[r][c];
       state[r][c] = 0;
@@ -888,8 +927,10 @@
       if (countFilled(state) <= MAX_GIVENS) break;
     }
 
+    // Minimalize further
     minimalize(state);
 
+    // If still over MAX_GIVENS, targeted removals
     function listGivens(st){
       const arr=[]; for (let r=0;r<N;r++) for (let c=0;c<N;c++) if (st[r][c]>0) arr.push([r,c]);
       return arr;
@@ -911,6 +952,7 @@
       }
     }
 
+    // Try to remove remaining givens entirely if uniqueness holds
     givens = listGivens(state);
     shuffle(givens);
     for (const [r,c] of givens){
@@ -922,12 +964,19 @@
       }
     }
 
+    // Ensure givens themselves respect King’s rule (when enabled)
+    if (!givensRespectKing(state)){
+      return generate();
+    }
+
+    // Final uniqueness + givens bound
     const finalUnique = solveCount(state.map(row=> row.slice()), 2) === 1;
     const finalGivens = countFilled(state);
     if (!finalUnique || finalGivens > MAX_GIVENS){
       return generate();
     }
 
+    // Lock in
     puzzle = state;
     fixed = puzzle.map(row=> row.map(v=> v>0));
     candidates = Array.from({length:N}, ()=> Array.from({length:N}, ()=> new Set()));
@@ -976,11 +1025,9 @@
     render();
   });
 
+  // Init
   generate();
-
-  // Build keypad after generation so state exists
 })();
 </script>
 </body>
-
 </html>
