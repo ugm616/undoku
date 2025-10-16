@@ -1,5 +1,6 @@
 # UnDoku - [Play Here](https://ugm616.github.io/undoku/)
 
+# UnDoku+ - [Play Here](https://ugm616.github.io/undoku/undoku+.html)
 ---
 
 ## About the Puzzle
